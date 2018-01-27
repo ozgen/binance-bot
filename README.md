@@ -1,4 +1,4 @@
 # binance-bot
 
-Pyton Dependency: 3.6
+Python Dependency: 3.6
 
