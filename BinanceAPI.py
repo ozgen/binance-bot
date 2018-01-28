@@ -9,6 +9,18 @@ import DateUtil
 asset = "asset"
 coin_qty = "free"
 
+OPEN_TIME = 0
+OPEN_PRICE = 1
+HIGH_PRICE = 2
+LOW_PRICE = 3
+CLOSE_PRICE = 3
+VOLUME = 4
+CLOSE_TIME = 5
+Q_ASSET_VOL = 6
+NUM_TRADES = 7
+T_B_B_A_VOL = 8  # Taker buy base asset volume
+T_B_Q_A_VOL = 9  # Taker buy quote asset volume
+
 
 class BinanceBot:
     client = Client(config.api_key, config.api_secret)
@@ -108,7 +120,10 @@ class BinanceBot:
          return symbol
      else:
          return None;
+         
          """
+
+    """{'asset': 'XRP', 'free': '278.79960000', 'locked': '0.00000000'}"""
 
     def getDepositBalance(self, short_symbol):
         return self.client.get_asset_balance(short_symbol)
@@ -186,22 +201,47 @@ class BinanceBot:
                 ]
             ]
     """
-    def getHistoricDatafromCoin(self, short_symbol, btcOrBnb="BTC", limit=500):
+
+    def getHistoricDatafromCoin(self, short_symbol, btcOrBnb="BTC", limit=1):
         params = {}
         params["symbol"] = self.getSymbol(short_symbol, btcOrBnb)
         params["limit"] = limit
         params["interval"] = self.interval
-        return self.client.get_klines(**params)
+        arr = self.client.get_klines(**params)
+        tmp = arr[0]
+        return tmp
 
-    def sellOrder(self, short_symbol, percentage, btcOrBnb="BTC"):
+    """{'symbol': 'XRPBTC', 'bidPrice': '0.00010665', 'bidQty': '1676.00000000', 'askPrice': '0.00010680', 'askQty': '20.00000000'}
+    """
+
+    def getCurrentDataOfTheCoin(self, short_symbol, btcOrBtn="BTC"):
+
+        symbol = self.getSymbol(short_symbol, btcOrBtn)
+        param = {}
+        param["symbol"] = symbol
+        retVal = self.client.get_orderbook_ticker(**param)
+        return retVal
+
+    def sellOrder(self, short_symbol, percentage=100, btcOrBnb="BTC"):
 
         pass
 
-    def buyOrder(self, short_symbol, btcOrBnb="BTC"):
+    def buyOrder(self, short_symbol, percentage=100, btcOrBnb="BTC"):
         pass
+
+    def cancelOrder(self, short_symbol, btcOrBnb="BTC"):
+        pass
+
+    def pumpBuyAndSell(self, short_symbol, btcOrBnb="BTC"):
+        curentData = self.getCurrentDataOfTheCoin(short_symbol, btcOrBnb)
+        bidPrice = curentData["bidPrice"]
+        balance = self.getDepositBalance(btcOrBnb)
+        totalCoin=balance[coin_qty]
+        print(totalCoin/bidPrice)
+
+
 
 
 bot = BinanceBot()
 # print(bot.client.ping())
-print(bot.getHistoricDatafromCoin(short_symbol="XRP", limit=1))
-print(DateUtil.interval_to_milliseconds(1517093460000))
+print(bot.pumpBuyAndSell(short_symbol="XRP"))
