@@ -2,9 +2,10 @@ from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceWithdrawException
 from binance.websockets import BinanceSocketManager
 import config
-import json
-from collections import namedtuple
 import DateUtil
+import threading
+import Utils
+import time
 
 asset = "asset"
 coin_qty = "free"
@@ -13,24 +14,38 @@ OPEN_TIME = 0
 OPEN_PRICE = 1
 HIGH_PRICE = 2
 LOW_PRICE = 3
-CLOSE_PRICE = 3
-VOLUME = 4
-CLOSE_TIME = 5
-Q_ASSET_VOL = 6
-NUM_TRADES = 7
-T_B_B_A_VOL = 8  # Taker buy base asset volume
-T_B_Q_A_VOL = 9  # Taker buy quote asset volume
+CLOSE_PRICE = 4
+VOLUME = 5
+CLOSE_TIME = 6
+Q_ASSET_VOL = 7
+NUM_TRADES = 8
+T_B_B_A_VOL = 9  # Taker buy base asset volume
+T_B_Q_A_VOL = 10  # Taker buy quote asset volume
 
 
 class BinanceBot:
     client = Client(config.api_key, config.api_secret)
+    bm = BinanceSocketManager(client)
     buying_price = 0.0
     selling_price = 0.0
     profit = 30  # percentages
     interval = Client.KLINE_INTERVAL_1MINUTE
+    quantity = 0
+    wait_time = 10
+    short_symbol = ""
+    btcOrBnb = "BTC"
+    profitPercentage = 1  # that means %1 profit
+    walletPercentage = 100  # default btcOrBnb coin percentages
+    test_total = 0.01  # btc sample for test
+    stop_loss = 0
+    stop_loss_percentage = 6  # % 6 stop loss default
 
-    def __init__(self):
-        pass
+    def __init__(self, short_symbol, btcOrBnb, profitPercentage, walletPercentage, stop_loss_pecentage):
+        self.short_symbol = short_symbol
+        self.btcOrBnb = btcOrBnb
+        self.profitPercentage = profitPercentage
+        self.walletPercentage = walletPercentage
+        self.stop_loss_percentage = stop_loss_pecentage
 
     def getMarketDepth(self, short_symbol, btcOrBnb="BTC"):
         symbol = self.getSymbol(short_symbol, btcOrBnb)
@@ -222,26 +237,301 @@ class BinanceBot:
         retVal = self.client.get_orderbook_ticker(**param)
         return retVal
 
-    def sellOrder(self, short_symbol, percentage=100, btcOrBnb="BTC"):
+    """{'symbol': 'XRPBTC', 'orderId': 24296649, 'clientOrderId': 'M5MABE75W9u5JoksLhjt7i',
+     'transactTime': 1517756438796, 'price': '0.01391320', 'origQty': '1.00000000', 
+     'executedQty': '0.00000000', 'status': 'NEW', 'timeInForce': 'GTC', 'type': 'LIMIT', 
+     'side': 'SELL'}
+    """
 
-        pass
+    def sellOrder(self, short_symbol, quantity, price, btcOrBnb="BTC"):
 
-    def buyOrder(self, short_symbol, percentage=100, btcOrBnb="BTC"):
-        pass
+        resp = ()
+        symbol = self.getSymbol(short_symbol, btcOrBnb)
+        param = {}
+        param["symbol"] = symbol
+        param["quantity"] = quantity
+        param["price"] = str(price)
 
-    def cancelOrder(self, short_symbol, btcOrBnb="BTC"):
-        pass
+        try:
+            resp = self.client.order_limit_sell(**param)
 
-    def pumpBuyAndSell(self, short_symbol, btcOrBnb="BTC"):
+        except BinanceAPIException as e:
+            print(e)
+        except BinanceWithdrawException as e:
+            print(e)
+        else:
+            print("Success")
+        return resp
+
+    def buyOrder(self, short_symbol, quantity, price, btcOrBnb="BTC"):
+        resp = ()
+        symbol = self.getSymbol(short_symbol, btcOrBnb)
+        param = {}
+        param["symbol"] = symbol
+        param["quantity"] = quantity
+        param["price"] = str(price)
+
+        try:
+            resp = self.client.order_limit_buy(**param)
+
+        except BinanceAPIException as e:
+            print(e)
+        except BinanceWithdrawException as e:
+            print(e)
+        else:
+            print("Success")
+        return resp
+
+    def cancelOrder(self, orderId, short_symbol, btcOrBnb="BTC"):
+        resp = ()
+        symbol = self.getSymbol(short_symbol, btcOrBnb)
+        param = {}
+        param["symbol"] = symbol
+        param["orderId"] = orderId
+
+        try:
+            resp = self.client.cancel_order(**param)
+
+        except BinanceAPIException as e:
+            print(e)
+        except BinanceWithdrawException as e:
+            print(e)
+        else:
+            print("Success")
+        return resp
+
+    def getBidPrice(self, short_symbol, btcOrBnb="BTC"):
         curentData = self.getCurrentDataOfTheCoin(short_symbol, btcOrBnb)
         bidPrice = curentData["bidPrice"]
+        return bidPrice
+
+    def getAskPrice(self, short_symbol, btcOrBnb="BTC"):
+        curentData = self.getCurrentDataOfTheCoin(short_symbol, btcOrBnb)
+        askPrice = curentData["askPrice"]
+        return askPrice
+
+    def pumpBuyAndSell(self, short_symbol, btcOrBnb="BTC", profitPercentage=30):
+
+        totalCoin = self.getTotalCoin(btcOrBnb=btcOrBnb)
+        askPrice = self.getBidPrice(short_symbol, btcOrBnb)
+        calculatedBidPrice = self.calcPriceWithPercentage(askPrice, 10)
+        sellingPrice = self.calcPriceWithPercentage(calculatedBidPrice, profitPercentage)
+        quantity = float(totalCoin) / float(calculatedBidPrice)
+        # quantity = int(quantity)
+        buyingOrder = self.buyOrder(short_symbol=short_symbol, quantity=quantity, price=calculatedBidPrice,
+                                    btcOrBnb=btcOrBnb)
+        sellingOrder = self.sellOrder(short_symbol=short_symbol, quantity=quantity, price=sellingPrice,
+                                      btcOrBnb=btcOrBnb)
+        return buyingOrder, sellingOrder
+
+    def getTotalCoin(self, btcOrBnb="BTC", walletPercantage=100):
         balance = self.getDepositBalance(btcOrBnb)
-        totalCoin=balance[coin_qty]
-        print(totalCoin/bidPrice)
+        totalCoin = (float(balance[coin_qty]) * walletPercantage) / 100
+        return totalCoin
+
+    # percentage example: %10
+    def calcPriceWithPercentage(self, price, percentage):
+        return float(price) * ((percentage + 100)/100)
+
+    def testSellOrder(self, short_symbol, btcOrBnb="BTC"):
+        curentData = self.getCurrentDataOfTheCoin(short_symbol, btcOrBnb)
+        askPrice = curentData["askPrice"]
+        sellingPrice = self.calcPriceWithPercentage(askPrice, 40)
+
+        resp = self.sellOrder(short_symbol, 1, sellingPrice)
+
+        return resp
+
+    def checkOpenOrders(self, short_symbol, btcOrBnb="BTC"):
+        openOrders = self.getOpenOrders()
+        symbol = self.getSymbol(short_symbol=short_symbol, btcOrBnb=btcOrBnb)
+        retResult = []
+        for order in openOrders:
+            if order["symbol"] == symbol:
+                retResult.append(order["orderId"])
+        return retResult
+
+    def closeOpenOrders(self, short_symbol, btcOrBnb="BTC"):
+
+        openOrderIds = self.checkOpenOrders(short_symbol=short_symbol, btcOrBnb=btcOrBnb)
+
+        if len(openOrderIds) > 0:
+            for orderId in openOrderIds:
+                self.cancelOrder(orderId=orderId, short_symbol=short_symbol, btcOrBnb=btcOrBnb)
+
+    def calcStopLossVal(self, totalcoin):
+        self.stop_loss = float(totalcoin) / ((100 - self.stop_loss_percentage) / 100)
+
+    # this method is used the wallet bnb or btc and buy and sell the subcoin
+    # that is depicted in short_symbol, with the help of profitPercentage
+    # before run range mode close all open orders
+
+    def runRangeMode(self, short_symbol, profitPercentage=1, btcOrBnb="BTC", walletPercentage=100):
+
+        openOrderList = self.checkOpenOrders(short_symbol=short_symbol, btcOrBnb=btcOrBnb)
+        if len(openOrderList) > 0:
+            return
+        hisData = self.getHistoricDatafromCoin(short_symbol=short_symbol, btcOrBnb=btcOrBnb)
+
+        # historic data that has min max and open price of the coin
+        currentPrice = self.getAskPrice(short_symbol=short_symbol, btcOrBnb=btcOrBnb)
+
+        totalCoin = self.getTotalCoin(btcOrBnb=btcOrBnb, walletPercantage=walletPercentage)
+
+        sellingPrice = 0
+
+        openPrice = hisData[OPEN_PRICE]
+        lowPrice = hisData[LOW_PRICE]
+        highPrice = hisData[HIGH_PRICE]
+        volume = hisData[VOLUME]
+
+        buyingMaxPrice = self.calcPriceWithPercentage(lowPrice, 10)
+
+        if self.stop_loss > 0 and (totalCoin >= self.stop_loss):
+            sellOrderAction = threading.Thread(
+                target=self.sellOrder(short_symbol=short_symbol, quantity=self.quantity, price=currentPrice,
+                                      btcOrBnb=btcOrBnb))
+            sellOrderAction.start()
+            self.quantity = 0
+            return
+
+        if (float(buyingMaxPrice) >= float(currentPrice) and self.quantity == 0):
+            quantity = float(totalCoin) / float(currentPrice)
+            # quantity = int(quantity)
+            self.quantity = quantity
+            self.buying_price = currentPrice
+            buyOrderAction = threading.Thread(
+                target=self.buyOrder(short_symbol=short_symbol, quantity=quantity, price=currentPrice,
+                                     btcOrBnb=btcOrBnb))
+            buyOrderAction.start()
+            sellingPrice = self.calcPriceWithPercentage(price=currentPrice, percentage=profitPercentage)
+            self.selling_price = sellingPrice
+            self.calcStopLossVal(totalcoin=totalCoin)
+            print("openPrice :", openPrice, "lowPrice :", lowPrice, "highPrice :", highPrice, "volume :", volume,
+                  "currentPrice :", currentPrice, "sellingPrice : " + str(self.selling_price),
+                  "quantity :" + str(self.quantity), "stop_loss :" + str(self.stop_loss))
+            return
+
+        if self.quantity > 0 and self.selling_price > 0 and float(currentPrice) >= float(self.selling_price):
+            sellOrderAction = threading.Thread(
+                target=self.sellOrder(short_symbol=short_symbol, quantity=self.quantity, price=currentPrice,
+                                      btcOrBnb=btcOrBnb))
+            sellOrderAction.start()
+            self.quantity = 0
+            return
+
+    def sellOrderTest(self, short_symbol, quantity, price, btcOrBnb="BTC"):
+
+        resp = ()
+        symbol = self.getSymbol(short_symbol, btcOrBnb)
+        param = {}
+        param["symbol"] = symbol
+        param["quantity"] = quantity
+        param["price"] = str(price)
+
+        try:
+            print("Sell  Order is given the price : " + str(price) + "  quantity : " + str(
+                quantity) + "  symbol : " + symbol)
+        except BinanceAPIException as e:
+            print(e)
+        except BinanceWithdrawException as e:
+            print(e)
+        else:
+            print("Success")
+
+    def checkPrice(self):
+        symbol = self.getSymbol(self.short_symbol, self.btcOrBnb)
+
+    def buyOrderTest(self, short_symbol, quantity, price, btcOrBnb="BTC"):
+        resp = ()
+        symbol = self.getSymbol(short_symbol, btcOrBnb)
+        param = {}
+        param["symbol"] = symbol
+        param["quantity"] = quantity
+        param["price"] = str(price)
+
+        try:
+            print("Buy  Order is given the price : " + str(price) + "  quantity : " + str(
+                quantity) + "  symbol : " + symbol)
+
+        except BinanceAPIException as e:
+            print(e)
+        except BinanceWithdrawException as e:
+            print(e)
+        else:
+            print("Success")
+
+    def runRangeModeTest(self, short_symbol, profitPercentage=1, btcOrBnb="BTC", walletPercentage=100):
+
+        hisData = self.getHistoricDatafromCoin(short_symbol=short_symbol, btcOrBnb=btcOrBnb)
+
+        # historic data that has min max and open price of the coin
+        currentPrice = self.getAskPrice(short_symbol=short_symbol, btcOrBnb=btcOrBnb)
+
+        totalCoin = self.test_total  # btc that i have
+
+        sellingPrice = 0
+
+        openPrice = hisData[OPEN_PRICE]
+        lowPrice = hisData[LOW_PRICE]
+        highPrice = hisData[HIGH_PRICE]
+        volume = hisData[VOLUME]
+
+        buyingMaxPrice = self.calcPriceWithPercentage(lowPrice, 5)
+
+        if self.stop_loss > 0 and (totalCoin >= self.stop_loss):
+            sellOrderAction = threading.Thread(
+                target=self.sellOrder(short_symbol=short_symbol, quantity=self.quantity, price=currentPrice,
+                                      btcOrBnb=btcOrBnb))
+            sellOrderAction.start()
+            self.quantity = 0
+            return
+
+        if (float(buyingMaxPrice) >= float(currentPrice) and self.quantity == 0):
+            quantity = float(totalCoin) / float(currentPrice)
+            print("self.quantity : " + str(quantity))
+            self.quantity = quantity
+            self.buying_price = currentPrice
+            buyOrderAction = threading.Thread(
+                target=self.buyOrderTest(short_symbol=short_symbol, quantity=quantity, price=currentPrice,
+                                         btcOrBnb=btcOrBnb))
+            buyOrderAction.start()
+            sellingPrice = self.calcPriceWithPercentage(price=currentPrice, percentage=profitPercentage)
+            self.selling_price = sellingPrice
+            self.calcStopLossVal(totalcoin=totalCoin)
+            print("openPrice :", openPrice, "lowPrice :", lowPrice, "highPrice :", highPrice, "volume :", volume,
+                  "currentPrice :", currentPrice, "sellingPrice : " + str(self.selling_price),
+                  "quantity :" + str(self.quantity), "stop_loss :" + str(self.stop_loss))
+            return
+
+        if self.quantity > 0 and self.selling_price > 0 and float(currentPrice) >= float(self.selling_price):
+            sellOrderAction = threading.Thread(
+                target=self.sellOrderTest(short_symbol=short_symbol, quantity=self.quantity, price=currentPrice,
+                                          btcOrBnb=btcOrBnb))
+            sellOrderAction.start()
+            self.test_total = self.quantity * float(currentPrice)
+            print("total price : " + str(self.test_total))
+            self.quantity = 0
+            return
+
+    def run(self):
+        actions = []
+
+        while True:
+            startTime = time.time()
+            actionTrader = threading.Thread(
+                target=self.runRangeModeTest(short_symbol=self.short_symbol, profitPercentage=self.profitPercentage,
+                                             btcOrBnb=self.btcOrBnb, walletPercentage=self.walletPercentage))
+            actions.append(actionTrader)
+            actionTrader.start()
+
+            endTime = time.time()
+
+            if endTime - startTime < self.wait_time:
+                time.sleep(self.wait_time - (endTime - startTime))
+            print(time.time())
 
 
-
-
-bot = BinanceBot()
+bot = BinanceBot(short_symbol="VIBE", btcOrBnb="BTC", profitPercentage=0.1, walletPercentage=100, stop_loss_pecentage=6)
 # print(bot.client.ping())
-print(bot.pumpBuyAndSell(short_symbol="XRP"))
+print(bot.run())
