@@ -6,6 +6,7 @@ import DateUtil
 import threading
 import Utils
 import time
+from datetime import datetime
 
 asset = "asset"
 coin_qty = "free"
@@ -29,7 +30,7 @@ class BinanceBot:
     buying_price = 0.0
     selling_price = 0.0
     profit = 30  # percentages
-    interval = Client.KLINE_INTERVAL_1MINUTE
+    interval = Client.KLINE_INTERVAL_1DAY
     quantity = 0
     wait_time = 10
     short_symbol = ""
@@ -331,7 +332,7 @@ class BinanceBot:
 
     # percentage example: %10
     def calcPriceWithPercentage(self, price, percentage):
-        return float(price) * ((percentage + 100)/100)
+        return float(price) * ((percentage + 100) / 100)
 
     def testSellOrder(self, short_symbol, btcOrBnb="BTC"):
         curentData = self.getCurrentDataOfTheCoin(short_symbol, btcOrBnb)
@@ -461,6 +462,12 @@ class BinanceBot:
         else:
             print("Success")
 
+    def calcBuyingMaxPrice(self, lowPrice, maxPrice):
+
+        dif = float(maxPrice) - float(lowPrice)
+        dif = dif / 3
+        return dif + float(lowPrice)
+
     def runRangeModeTest(self, short_symbol, profitPercentage=1, btcOrBnb="BTC", walletPercentage=100):
 
         hisData = self.getHistoricDatafromCoin(short_symbol=short_symbol, btcOrBnb=btcOrBnb)
@@ -477,7 +484,7 @@ class BinanceBot:
         highPrice = hisData[HIGH_PRICE]
         volume = hisData[VOLUME]
 
-        buyingMaxPrice = self.calcPriceWithPercentage(lowPrice, 5)
+        buyingMaxPrice = self.calcBuyingMaxPrice(lowPrice, highPrice)
 
         if self.stop_loss > 0 and (totalCoin >= self.stop_loss):
             sellOrderAction = threading.Thread(
@@ -516,7 +523,7 @@ class BinanceBot:
 
     def run(self):
         actions = []
-
+        cnt = 0
         while True:
             startTime = time.time()
             actionTrader = threading.Thread(
@@ -529,6 +536,6 @@ class BinanceBot:
 
             if endTime - startTime < self.wait_time:
                 time.sleep(self.wait_time - (endTime - startTime))
-            print(time.time())
-
-
+            cnt = cnt + 1
+            if cnt % 6 == 0:
+                print(datetime.utcnow())
