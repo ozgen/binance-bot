@@ -265,12 +265,7 @@ class BinanceBot:
             print("Success")
 
     def buyOrder(self, short_symbol, quantity, price, btcOrBnb="BTC"):
-        resp = ()
         symbol = self.getSymbol(short_symbol, btcOrBnb)
-        param = {}
-        param["symbol"] = symbol
-        param["quantity"] = str(quantity)
-        param["price"] = str(price)
 
         try:
             order = self.client.create_order(
