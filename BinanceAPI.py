@@ -7,6 +7,7 @@ import threading
 import Utils
 import time
 from datetime import datetime
+from binance.enums import *
 
 asset = "asset"
 coin_qty = "free"
@@ -30,14 +31,14 @@ class BinanceBot:
     buying_price = 0.0
     selling_price = 0.0
     profit = 30  # percentages
-    interval = Client.KLINE_INTERVAL_1DAY
+    interval = Client.KLINE_INTERVAL_1HOUR
     quantity = 0
     wait_time = 10
     short_symbol = ""
     btcOrBnb = "BTC"
     profitPercentage = 1  # that means %1 profit
     walletPercentage = 100  # default btcOrBnb coin percentages
-    test_total = 0.01  # btc sample for test
+    test_total = 1  # 0.01  # btc sample for test
     stop_loss = 0
     stop_loss_percentage = 6  # % 6 stop loss default
 
@@ -262,18 +263,23 @@ class BinanceBot:
             print(e)
         else:
             print("Success")
-        return resp
 
     def buyOrder(self, short_symbol, quantity, price, btcOrBnb="BTC"):
         resp = ()
         symbol = self.getSymbol(short_symbol, btcOrBnb)
         param = {}
         param["symbol"] = symbol
-        param["quantity"] = quantity
+        param["quantity"] = str(quantity)
         param["price"] = str(price)
 
         try:
-            resp = self.client.order_limit_buy(**param)
+            order = self.client.create_order(
+                symbol=symbol,
+                side=SIDE_BUY,
+                type=ORDER_TYPE_LIMIT,
+                timeInForce=TIME_IN_FORCE_GTC,
+                quantity=quantity,
+                price=str(price))
 
         except BinanceAPIException as e:
             print(e)
@@ -281,7 +287,6 @@ class BinanceBot:
             print(e)
         else:
             print("Success")
-        return resp
 
     def cancelOrder(self, orderId, short_symbol, btcOrBnb="BTC"):
         resp = ()
@@ -299,7 +304,6 @@ class BinanceBot:
             print(e)
         else:
             print("Success")
-        return resp
 
     def getBidPrice(self, short_symbol, btcOrBnb="BTC"):
         curentData = self.getCurrentDataOfTheCoin(short_symbol, btcOrBnb)
@@ -311,14 +315,15 @@ class BinanceBot:
         askPrice = curentData["askPrice"]
         return askPrice
 
-    def pumpBuyAndSell(self, short_symbol, btcOrBnb="BTC", profitPercentage=30):
+    def pumpBuyAndSell(self, short_symbol, btcOrBnb="BTC", profitPercentage=20):
 
         totalCoin = self.getTotalCoin(btcOrBnb=btcOrBnb)
         askPrice = self.getBidPrice(short_symbol, btcOrBnb)
-        calculatedBidPrice = self.calcPriceWithPercentage(askPrice, 10)
+        calculatedBidPrice = self.calcPriceWithPercentage(askPrice, 3) # %3 in order to buy
         sellingPrice = self.calcPriceWithPercentage(calculatedBidPrice, profitPercentage)
         quantity = float(totalCoin) / float(calculatedBidPrice)
-        # quantity = int(quantity)
+        # todo quantity value is float or int ???
+        quantity = int(quantity)
         buyingOrder = self.buyOrder(short_symbol=short_symbol, quantity=quantity, price=calculatedBidPrice,
                                     btcOrBnb=btcOrBnb)
         sellingOrder = self.sellOrder(short_symbol=short_symbol, quantity=quantity, price=sellingPrice,
