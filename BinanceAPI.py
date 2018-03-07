@@ -8,6 +8,7 @@ import Utils
 import time
 from datetime import datetime
 from binance.enums import *
+import decimal
 
 asset = "asset"
 coin_qty = "free"
@@ -41,8 +42,9 @@ class BinanceBot:
     test_total = 1  # 0.01  # btc sample for test
     stop_loss = 0
     stop_loss_percentage = 6  # % 6 stop loss default
+    binance_fee = 0.00201
 
-    def __init__(self, short_symbol, btcOrBnb, profitPercentage, walletPercentage, stop_loss_pecentage):
+    def __init__(self, short_symbol, btcOrBnb='BTC', profitPercentage=2, walletPercentage=100, stop_loss_pecentage=5):
         self.short_symbol = short_symbol
         self.btcOrBnb = btcOrBnb
         self.profitPercentage = profitPercentage
@@ -249,6 +251,7 @@ class BinanceBot:
 
         resp = ()
         symbol = self.getSymbol(short_symbol, btcOrBnb)
+        price = str(decimal.Decimal(price))[:16]
         param = {}
         param["symbol"] = symbol
         param["quantity"] = quantity
@@ -266,7 +269,7 @@ class BinanceBot:
 
     def buyOrder(self, short_symbol, quantity, price, btcOrBnb="BTC"):
         symbol = self.getSymbol(short_symbol, btcOrBnb)
-
+        price = str(decimal.Decimal(price))[:16]
         try:
             order = self.client.create_order(
                 symbol=symbol,
@@ -282,6 +285,9 @@ class BinanceBot:
             print(e)
         else:
             print("Success")
+
+    def formatPrice(self, price):
+        return str(decimal.Decimal(price))[:16]
 
     def cancelOrder(self, orderId, short_symbol, btcOrBnb="BTC"):
         resp = ()
@@ -310,20 +316,60 @@ class BinanceBot:
         askPrice = curentData["askPrice"]
         return askPrice
 
-    def pumpBuyAndSell(self, short_symbol, btcOrBnb="BTC", profitPercentage=20):
+    def pumpBuyAndSell(self, short_symbol, btcOrBnb="BTC", profitPercentage=20, buyingPercentage=5):
 
         totalCoin = self.getTotalCoin(btcOrBnb=btcOrBnb)
         askPrice = self.getBidPrice(short_symbol, btcOrBnb)
-        calculatedBidPrice = self.calcPriceWithPercentage(askPrice, 3) # %3 in order to buy
+        calculatedBidPrice = self.calcPriceWithPercentage(askPrice, buyingPercentage)  # %5 in order to buy
         sellingPrice = self.calcPriceWithPercentage(calculatedBidPrice, profitPercentage)
-        quantity = float(totalCoin) / float(calculatedBidPrice)
+        # calculates the number of PUMP_COIN(s) to buy, taking into
+        # consideration Binance's 0.20% fee.
+        c_fee = 0.00201
+        binance_fee = totalCoin * c_fee
+        quantity = float((totalCoin - binance_fee)) / calculatedBidPrice
+        # quantity = float(totalCoin) / float(calculatedBidPrice)
         # todo quantity value is float or int ???
-        quantity = int(quantity)
+        # quantity = int(quantity)
         buyingOrder = self.buyOrder(short_symbol=short_symbol, quantity=quantity, price=calculatedBidPrice,
                                     btcOrBnb=btcOrBnb)
-        sellingOrder = self.sellOrder(short_symbol=short_symbol, quantity=quantity, price=sellingPrice,
+        print('\n Buy order placed for ' + str(quantity) + 'coins at ' + str(self.formatPrice(askPrice)) + 'BTC \
+                          each for a total of ' + str(self.formatPrice(calculatedBidPrice)) + ' BTC')
+
+        balances = self.getDepositBalance(short_symbol=short_symbol)
+        COINS_OWNED = balances["free"]
+        while COINS_OWNED == 0:
+            time.sleep(0.1)
+            balances = self.getDepositBalance(short_symbol=short_symbol)
+            COINS_OWNED = balances["free"]
+
+        print('\nPlacing sell order at ' + COINS_OWNED + ' ' + str(profitPercentage) + '%...')
+
+        sellingOrder = self.sellOrder(short_symbol=short_symbol, quantity=COINS_OWNED, price=sellingPrice,
                                       btcOrBnb=btcOrBnb)
+
+        SELL_PRICE = float(COINS_OWNED) * float(sellingPrice)
+
+        print('Sell order placed of ' + str(
+            COINS_OWNED) + ' coins at ' + short_symbol + '  ' + str(
+            self.formatPrice(sellingPrice)) + ' BTC each for ' + 'a total of ' + str(
+            self.formatPrice(SELL_PRICE)) + ' BTC')
+
+        PROFIT = sellingPrice - calculatedBidPrice
+
+        print('PROFIT if sell order fills: ' + str(self.formatPrice(PROFIT) + ' BTC'))
+
         return buyingOrder, sellingOrder
+
+    def calculateQuantity(self, totalCoin, coinPrice):
+        c_fee = 0.00201
+        binance_fee = totalCoin * c_fee
+        quantity = float((totalCoin - binance_fee)) / coinPrice
+        return quantity
+
+    def getAvailableQuantity(self, short_symbol):
+        balances = self.getDepositBalance(short_symbol=short_symbol)
+        COINS_OWNED = balances["free"]
+        return COINS_OWNED
 
     def getTotalCoin(self, btcOrBnb="BTC", walletPercantage=100):
         balance = self.getDepositBalance(btcOrBnb)
@@ -397,7 +443,7 @@ class BinanceBot:
             return
 
         if (float(buyingMaxPrice) >= float(currentPrice) and self.quantity == 0):
-            quantity = float(totalCoin) / float(currentPrice)
+            quantity = self.calculateQuantity(totalCoin, currentPrice)
             # quantity = int(quantity)
             self.quantity = quantity
             self.buying_price = currentPrice
@@ -414,6 +460,7 @@ class BinanceBot:
             return
 
         if self.quantity > 0 and self.selling_price > 0 and float(currentPrice) >= float(self.selling_price):
+            self.quantity = self.getAvailableQuantity(short_symbol)
             sellOrderAction = threading.Thread(
                 target=self.sellOrder(short_symbol=short_symbol, quantity=self.quantity, price=currentPrice,
                                       btcOrBnb=btcOrBnb))
