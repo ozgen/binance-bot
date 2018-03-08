@@ -5,7 +5,7 @@ Python Dependency: 3.6
 Go API Center, Create New Api Key
 
  [✓] Read Info [✓] Enable Trading [X] Enable Withdrawals
-Rename config.sample.py to config.py / orders.sample.db to orders.db
+Rename config.sample.py to config.py 
 
 Get an API and Secret Key, insert into config.py
 
