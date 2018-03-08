@@ -372,7 +372,7 @@ class BinanceBot:
     def calculateQuantity(self, totalCoin, coinPrice):
         c_fee = 0.00201
         binance_fee = totalCoin * c_fee
-        quantity = float((totalCoin - binance_fee)) / coinPrice
+        quantity = float((totalCoin - binance_fee)) / float(coinPrice)
         return quantity
 
     def getAvailableQuantity(self, short_symbol):
@@ -583,7 +583,7 @@ class BinanceBot:
         while True:
             startTime = time.time()
             actionTrader = threading.Thread(
-                target=self.runRangeModeTest(short_symbol=self.short_symbol, profitPercentage=self.profitPercentage,
+                target=self.runRangeMode(short_symbol=self.short_symbol, profitPercentage=self.profitPercentage,
                                              btcOrBnb=self.btcOrBnb, walletPercentage=self.walletPercentage))
             actions.append(actionTrader)
             actionTrader.start()
