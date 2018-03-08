@@ -11,9 +11,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     btcOrBnb = 'BTC'
-    profitPercentage = 2
-    walletPercentage = 100
-    stop_loss_pecentage = 5
+    profitPercentage = 2 # % percentage of the profit we want
+    walletPercentage = 100 # % percentage of wallet we use  btc or bnb
+    stop_loss_pecentage = 5 # %percentage of stop loss
 
     short_symbol = str(args.symbol).upper()
     if args.btcorbnb:
