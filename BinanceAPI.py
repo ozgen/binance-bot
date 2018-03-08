@@ -252,6 +252,7 @@ class BinanceBot:
         resp = ()
         symbol = self.getSymbol(short_symbol, btcOrBnb)
         price = self.formatNumbers(price)
+        quantity = self.formatNumbers(quantity)
         param = {}
         param["symbol"] = symbol
         param["quantity"] = quantity
@@ -270,6 +271,7 @@ class BinanceBot:
     def buyOrder(self, short_symbol, quantity, price, btcOrBnb="BTC"):
         symbol = self.getSymbol(short_symbol, btcOrBnb)
         price = self.formatNumbers(price)
+        quantity = self.formatNumbers(quantity)
         try:
             order = self.client.create_order(
                 symbol=symbol,
@@ -287,7 +289,10 @@ class BinanceBot:
             print("Success")
 
     def formatNumbers(self, price):
-        return str(decimal.Decimal(price))[:8]
+        if self.btcOrBnb == 'BTC':
+            return str(decimal.Decimal(price))[:8]
+        else:
+            return str(decimal.Decimal(price))[:6]
 
     def cancelOrder(self, orderId, short_symbol, btcOrBnb="BTC"):
         resp = ()
@@ -317,7 +322,7 @@ class BinanceBot:
         return askPrice
 
     def pumpBuyAndSell(self, short_symbol, btcOrBnb="BTC", profitPercentage=20, buyingPercentage=5):
-
+        self.btcOrBnb = btcOrBnb
         totalCoin = self.getTotalCoin(btcOrBnb=btcOrBnb)
         askPrice = self.getBidPrice(short_symbol, btcOrBnb)
         calculatedBidPrice = self.calcPriceWithPercentage(askPrice, buyingPercentage)  # %5 in order to buy
@@ -332,12 +337,12 @@ class BinanceBot:
         # quantity = float(totalCoin) / float(calculatedBidPrice)
         # todo quantity value is float or int ???
         # quantity = int(quantity)
-        print("Total coins: "+ str(self.formatNumbers(totalCoin)))
+        print("Total coins: " + str(self.formatNumbers(totalCoin)))
         buyingOrder = self.buyOrder(short_symbol=short_symbol, quantity=quantity, price=calculatedBidPrice,
                                     btcOrBnb=btcOrBnb)
         print('\n Buy order placed for ' + str(quantity) + ' coins at ' + str(
-            self.formatNumbers(askPrice)) + 'BTC  each for a total of ' + str(
-            self.formatNumbers(calculatedBidPrice)) + ' BTC')
+            self.formatNumbers(askPrice)) + ' ' + btcOrBnb + '  each for a total of ' + str(
+            self.formatNumbers(calculatedBidPrice)) + ' ' + btcOrBnb)
 
         balances = self.getDepositBalance(short_symbol=short_symbol)
         COINS_OWNED = balances["free"]
@@ -346,7 +351,7 @@ class BinanceBot:
             balances = self.getDepositBalance(short_symbol=short_symbol)
             COINS_OWNED = balances["free"]
 
-        print('\nPlacing sell order at ' + COINS_OWNED + 'coins with ' + str(profitPercentage) + '%...')
+        print('\nPlacing sell order at ' + COINS_OWNED + ' coins with ' + str(profitPercentage) + '%...')
 
         sellingOrder = self.sellOrder(short_symbol=short_symbol, quantity=COINS_OWNED, price=sellingPrice,
                                       btcOrBnb=btcOrBnb)
@@ -355,12 +360,12 @@ class BinanceBot:
 
         print('Sell order placed of ' + str(
             COINS_OWNED) + ' coins at ' + short_symbol + '  ' + str(
-            self.formatNumbers(sellingPrice)) + ' BTC each for ' + 'a total of ' + str(
-            self.formatNumbers(SELL_PRICE)) + ' BTC')
+            self.formatNumbers(sellingPrice)) + ' ' + btcOrBnb + ' each for ' + 'a total of ' + str(
+            self.formatNumbers(SELL_PRICE)) + ' ' + btcOrBnb)
 
         PROFIT = float(sellingPrice) - float(calculatedBidPrice)
 
-        print('PROFIT if sell order fills: ' + str(self.formatNumbers(PROFIT) + ' BTC'))
+        print('PROFIT if sell order fills: ' + str(self.formatNumbers(PROFIT) + ' ' + btcOrBnb))
 
         return buyingOrder, sellingOrder
 
